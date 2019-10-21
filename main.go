@@ -51,6 +51,7 @@ var path = flag.String("dir", ".", "指定工作目录,默认当前目录")
 
 func main() {
 	flag.PrintDefaults()
+	flag.Parse()
 	e := os.Chdir(*path)
 	if e != nil {
 		log.Fatalln(e)
