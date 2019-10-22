@@ -8,12 +8,14 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 const htmlCode = `<!DOCTYPE html>
@@ -24,23 +26,31 @@ const htmlCode = `<!DOCTYPE html>
     <base href="/">
 </head>
 <body>
-<form method="post" action="" enctype="multipart/form-data">
-    <input type="file" name="upload">
-    <input type="submit" value="upload"/>
-</form>
-<table>
-    <td>file</td>
-    <td>mod time</td>
-    <td>size</td>
-    <td>is dir</td>
-    {{range .Files}}
+<header>
+    <form method="post" action="" enctype="multipart/form-data">
+        <input type="file" name="upload">
+        <input type="submit" value="upload"/>
+    </form>
+</header>
+<article>
+    <table>
         <tr>
-            <td><a href="{{$.Location}}/{{.Name}}">{{.Name}}</a></td>
-            <td>{{.ModTime}}</td>
-            <td>{{.Size}}</td>
-            <td>{{.IsDir}}</td>
-        </tr>{{end}}
-</table>
+            <td>file</td>
+            <td>mod time</td>
+            <td>size</td>
+            <td>is dir</td>
+        </tr>
+        <tr><td><a href="{{.Location}}/..">..</a></td></tr>
+        {{range .Files}}
+            <tr>
+                <td><a href="{{$.Location}}/{{.Name}}">{{.Name}}</a></td>
+                <td>{{.ModTime}}</td>
+                <td>{{.Size}}</td>
+                <td>{{.IsDir}}</td>
+            </tr>
+        {{end}}
+    </table>
+</article>
 </body>
 </html>`
 
@@ -66,7 +76,7 @@ func main() {
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		requestURI, _ := url.PathUnescape(request.URL.RequestURI())
 		fmt.Println(request.RemoteAddr, request.Method, requestURI)
-		requestURI = fmt.Sprintf(".%s", requestURI)
+		requestURI = fmt.Sprintf(".%s", strings.TrimRight(requestURI, "/"))
 
 		switch request.Method {
 		case http.MethodGet:
@@ -90,6 +100,7 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 	uri, e := os.Stat(requestURI)
 	if os.IsNotExist(e) {
 		writer.WriteHeader(404)
+		_, _ = writer.Write([]byte(fmt.Sprintf("<h1>%s NOT FOUND<h1>", requestURI)))
 		log.Println(requestURI, "NOT FOUND")
 		return
 	}
@@ -97,7 +108,8 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 	case mode.IsDir():
 		files, err := ioutil.ReadDir(requestURI)
 		if err != nil {
-			log.Panicln(err)
+			log.Println(err)
+			return
 		}
 		fs, dirs := splitFileAndDir(files)
 		sort.SliceStable(fs, func(i, j int) bool {
@@ -116,19 +128,28 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 		temp := template.New("Files List")
 		parse, err := temp.Parse(htmlCode)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 		}
 		err = parse.Execute(writer, p)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
+			return
 		}
 	case mode.IsRegular():
 		file, e := os.Open(requestURI)
 		if e != nil {
-			log.Panicln(e)
+			log.Println(e)
+			return
 		}
 		defer file.Close()
 		reader := bufio.NewReader(file)
+		index := strings.LastIndex(file.Name(), ".")
+		if index > -1 {
+			writer.Header().Set("Content-Type", mime.TypeByExtension(file.Name()[index:]))
+		}
+		if writer.Header().Get("Content-Type") == "" {
+			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
 		_, e = reader.WriteTo(writer)
 		if e != nil {
 			log.Println(e)
@@ -137,7 +158,7 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 }
 
 func doPost(writer http.ResponseWriter, request *http.Request, requestURI string) {
-	_ = request.ParseMultipartForm(32 << 20)
+	_ = request.ParseMultipartForm(1<<63 - 1)
 	file, handler, err := request.FormFile("upload")
 	if err != nil {
 		_, _ = writer.Write([]byte(err.Error()))
