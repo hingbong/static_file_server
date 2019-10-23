@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"html/template"
@@ -130,7 +131,14 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 		if err != nil {
 			log.Println(err)
 		}
-		err = parse.Execute(writer, p)
+		buffer := bytes.Buffer{}
+		err = parse.Execute(&buffer, p)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		writer.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
+		_, err = writer.Write(buffer.Bytes())
 		if err != nil {
 			log.Println(err)
 			return
@@ -150,6 +158,11 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 		if writer.Header().Get("Content-Type") == "" {
 			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		}
+		fileInfo, e := file.Stat()
+		if e != nil {
+			log.Println(e)
+		}
+		writer.Header().Set("Content-Length", strconv.Itoa(int(fileInfo.Size())))
 		_, e = reader.WriteTo(writer)
 		if e != nil {
 			log.Println(e)
