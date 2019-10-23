@@ -152,11 +152,14 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 		defer file.Close()
 		reader := bufio.NewReader(file)
 		index := strings.LastIndex(file.Name(), ".")
+		var mimeTp string
 		if index > -1 {
-			writer.Header().Set("Content-Type", mime.TypeByExtension(file.Name()[index:]))
+			mimeTp = mime.TypeByExtension(file.Name()[index:])
 		}
-		if writer.Header().Get("Content-Type") == "" {
-			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if mimeTp == "" {
+			writer.Header().Set("Content-Type", "application/octet-stream")
+		} else {
+			writer.Header().Set("Content-Type", mimeTp)
 		}
 		fileInfo, e := file.Stat()
 		if e != nil {
