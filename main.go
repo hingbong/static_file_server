@@ -151,7 +151,7 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) {
 		log.Println(err)
 		return
 	}
-	fs, dirs := splitFileAndDir(files)
+	fs, dirs := splitDirsAndFiles(files)
 	sort.SliceStable(fs, func(i, j int) bool {
 		return strings.ToUpper(fs[i].Name()) <= strings.ToUpper(fs[j].Name())
 	})
@@ -160,7 +160,7 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) {
 	})
 	p := &page{
 		Title:    requestURI,
-		Files:    append(dirs, fs...),
+		Files:    files,
 		Location: requestURI,
 	}
 	temp := template.New("Files List")
@@ -191,14 +191,8 @@ func filesProcess(requestURI string, writer http.ResponseWriter) {
 	defer file.Close()
 	reader := bufio.NewReader(file)
 	index := strings.LastIndex(file.Name(), ".")
-	var mimeTp string
 	if index > -1 {
-		mimeTp = mime.TypeByExtension(file.Name()[index:])
-	}
-	if mimeTp == "" {
-		writer.Header().Set("Content-Type", "application/octet-stream")
-	} else {
-		writer.Header().Set("Content-Type", mimeTp)
+		writer.Header().Set("Content-Type", mime.TypeByExtension(file.Name()[index:]))
 	}
 	fileInfo, e := file.Stat()
 	if e != nil {
@@ -211,14 +205,14 @@ func filesProcess(requestURI string, writer http.ResponseWriter) {
 	}
 }
 
-func splitFileAndDir(files []os.FileInfo) ([]os.FileInfo, []os.FileInfo) {
+// the first part is directories, and the second part is files
+func splitDirsAndFiles(files []os.FileInfo) ([]os.FileInfo, []os.FileInfo) {
 	var i int
 	for k, v := range files {
 		if v.IsDir() {
-			continue
+			files[i], files[k] = v, files[i]
+			i++
 		}
-		files[i], files[k] = v, files[i]
-		i++
 	}
 	return files[:i], files[i:]
 }
