@@ -73,7 +73,7 @@ func main() {
 	if e != nil {
 		log.Fatalln(e)
 	}
-	runtime.GOMAXPROCS(8)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		requestURI, _ := url.PathUnescape(request.URL.RequestURI())
 		fmt.Println(request.RemoteAddr, request.Method, requestURI)
@@ -107,69 +107,9 @@ func doGet(writer http.ResponseWriter, requestURI string) {
 	}
 	switch mode := uri.Mode(); {
 	case mode.IsDir():
-		files, err := ioutil.ReadDir(requestURI)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		fs, dirs := splitFileAndDir(files)
-		sort.SliceStable(fs, func(i, j int) bool {
-			return fs[i].Name() <= fs[j].Name()
-		})
-		sort.SliceStable(dirs, func(i, j int) bool {
-			return dirs[i].Name() <= dirs[j].Name()
-		})
-
-		p := &page{
-			Title:    requestURI,
-			Files:    append(dirs, fs...),
-			Location: requestURI,
-		}
-
-		temp := template.New("Files List")
-		parse, err := temp.Parse(htmlCode)
-		if err != nil {
-			log.Println(err)
-		}
-		buffer := bytes.Buffer{}
-		err = parse.Execute(&buffer, p)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		writer.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
-		_, err = writer.Write(buffer.Bytes())
-		if err != nil {
-			log.Println(err)
-			return
-		}
+		directoryProcess(requestURI, writer)
 	case mode.IsRegular():
-		file, e := os.Open(requestURI)
-		if e != nil {
-			log.Println(e)
-			return
-		}
-		defer file.Close()
-		reader := bufio.NewReader(file)
-		index := strings.LastIndex(file.Name(), ".")
-		var mimeTp string
-		if index > -1 {
-			mimeTp = mime.TypeByExtension(file.Name()[index:])
-		}
-		if mimeTp == "" {
-			writer.Header().Set("Content-Type", "application/octet-stream")
-		} else {
-			writer.Header().Set("Content-Type", mimeTp)
-		}
-		fileInfo, e := file.Stat()
-		if e != nil {
-			log.Println(e)
-		}
-		writer.Header().Set("Content-Length", strconv.Itoa(int(fileInfo.Size())))
-		_, e = reader.WriteTo(writer)
-		if e != nil {
-			log.Println(e)
-		}
+		filesProcess(requestURI, writer)
 	}
 }
 
@@ -205,15 +145,80 @@ func doPost(writer http.ResponseWriter, request *http.Request, requestURI string
 	doGet(writer, requestURI)
 }
 
-func splitFileAndDir(files []os.FileInfo) ([]os.FileInfo, []os.FileInfo) {
-	dirs := make([]os.FileInfo, 0)
-	fs := make([]os.FileInfo, 0)
-	for _, v := range files {
-		if v.IsDir() {
-			dirs = append(dirs, v)
-		} else {
-			fs = append(fs, v)
-		}
+func directoryProcess(requestURI string, writer http.ResponseWriter) {
+	files, err := ioutil.ReadDir(requestURI)
+	if err != nil {
+		log.Println(err)
+		return
 	}
-	return fs, dirs
+	fs, dirs := splitFileAndDir(files)
+	sort.SliceStable(fs, func(i, j int) bool {
+		return strings.ToUpper(fs[i].Name()) <= strings.ToUpper(fs[j].Name())
+	})
+	sort.SliceStable(dirs, func(i, j int) bool {
+		return strings.ToUpper(dirs[i].Name()) <= strings.ToUpper(dirs[j].Name())
+	})
+	p := &page{
+		Title:    requestURI,
+		Files:    append(dirs, fs...),
+		Location: requestURI,
+	}
+	temp := template.New("Files List")
+	parse, err := temp.Parse(htmlCode)
+	if err != nil {
+		log.Println(err)
+	}
+	buffer := bytes.Buffer{}
+	err = parse.Execute(&buffer, p)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	writer.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
+	_, err = writer.Write(buffer.Bytes())
+	if err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func filesProcess(requestURI string, writer http.ResponseWriter) {
+	file, e := os.Open(requestURI)
+	if e != nil {
+		log.Println(e)
+		return
+	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	index := strings.LastIndex(file.Name(), ".")
+	var mimeTp string
+	if index > -1 {
+		mimeTp = mime.TypeByExtension(file.Name()[index:])
+	}
+	if mimeTp == "" {
+		writer.Header().Set("Content-Type", "application/octet-stream")
+	} else {
+		writer.Header().Set("Content-Type", mimeTp)
+	}
+	fileInfo, e := file.Stat()
+	if e != nil {
+		log.Println(e)
+	}
+	writer.Header().Set("Content-Length", strconv.Itoa(int(fileInfo.Size())))
+	_, e = reader.WriteTo(writer)
+	if e != nil {
+		log.Println(e)
+	}
+}
+
+func splitFileAndDir(files []os.FileInfo) ([]os.FileInfo, []os.FileInfo) {
+	var i int
+	for k, v := range files {
+		if v.IsDir() {
+			continue
+		}
+		files[i], files[k] = v, files[i]
+		i++
+	}
+	return files[:i], files[i:]
 }
