@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
@@ -13,17 +12,16 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-const htmlCode = `<!DOCTYPE html>
+const htmlFirstPart = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{{.Title}}</title>
+    <title>%s</title>
     <base href="/">
 </head>
 <body>
@@ -41,39 +39,46 @@ const htmlCode = `<!DOCTYPE html>
             <td>size</td>
             <td>is dir</td>
         </tr>
-        <tr><td><a href="{{.Location}}/..">..</a></td></tr>
-        {{range .Files}}
-            <tr>
-                <td><a href="{{$.Location}}/{{.Name}}">{{.Name}}</a></td>
-                <td>{{.ModTime}}</td>
-                <td>{{.Size}}</td>
-                <td>{{.IsDir}}</td>
-            </tr>
-        {{end}}
-    </table>
+        <tr><td><a href="%s/..">..</a></td></tr>`
+
+const htmlTableRow = `<tr>
+                <td><a href="%s/%s">%s</a></td>
+                <td>%s</td>
+                <td>%s</td>
+                <td>%s</td>
+            </tr>`
+
+const htmlLastPart = `</table>
 </article>
 </body>
 </html>`
 
-const sep = "/"
+var htmlReplacer = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	// "&#34;" is shorter than "&quot;".
+	`"`, "&#34;",
+	// "&#39;" is shorter than "&apos;" and apos was not in HTML until HTML5.
+	"'", "&#39;",
+)
 
-type page struct {
-	Title    string
-	Files    []os.FileInfo
-	Location string
-}
+const sep = "/"
 
 var port = flag.Int("port", 80, "指定所监听端口,默认80")
 var path = flag.String("dir", ".", "指定工作目录,默认当前目录")
 
-func main() {
+func init() {
+
 	flag.PrintDefaults()
 	flag.Parse()
+}
+
+func main() {
 	e := os.Chdir(*path)
 	if e != nil {
 		log.Fatalln(e)
 	}
-	runtime.GOMAXPROCS(runtime.NumCPU())
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		requestURI, _ := url.PathUnescape(request.URL.RequestURI())
 		fmt.Println(request.RemoteAddr, request.Method, requestURI)
@@ -158,22 +163,19 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) {
 	sort.SliceStable(dirs, func(i, j int) bool {
 		return strings.ToUpper(dirs[i].Name()) <= strings.ToUpper(dirs[j].Name())
 	})
-	p := &page{
-		Title:    requestURI,
-		Files:    files,
-		Location: requestURI,
-	}
-	temp := template.New("Files List")
-	parse, err := temp.Parse(htmlCode)
-	if err != nil {
-		log.Println(err)
-	}
 	buffer := bytes.Buffer{}
-	err = parse.Execute(&buffer, p)
+	name := htmlReplacer.Replace(requestURI)
+	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, requestURI)
 	if err != nil {
 		log.Println(err)
-		return
 	}
+	for _, v := range files {
+		_, err := fmt.Fprintf(&buffer, htmlTableRow, requestURI, v.Name(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	buffer.WriteString(htmlLastPart)
 	writer.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
 	_, err = writer.Write(buffer.Bytes())
 	if err != nil {
