@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -69,7 +70,6 @@ var port = flag.Int("port", 80, "指定所监听端口,默认80")
 var path = flag.String("dir", ".", "指定工作目录,默认当前目录")
 
 func init() {
-
 	flag.PrintDefaults()
 	flag.Parse()
 }
@@ -86,9 +86,15 @@ func main() {
 
 		switch request.Method {
 		case http.MethodGet:
-			doGet(writer, requestURI)
+			err := doGet(writer, requestURI)
+			handleError(err, writer)
 		case http.MethodPost:
-			doPost(writer, request, requestURI)
+			err := doPost(request, requestURI)
+			if handleError(err, writer) {
+				return
+			}
+			err = directoryProcess(requestURI, writer)
+			handleError(err, writer)
 		default:
 			writer.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -101,60 +107,56 @@ func main() {
 	}
 }
 
-func doGet(writer http.ResponseWriter, requestURI string) {
-
+func doGet(writer http.ResponseWriter, requestURI string) error {
 	uri, e := os.Stat(requestURI)
 	if os.IsNotExist(e) {
-		writer.WriteHeader(404)
-		_, _ = writer.Write([]byte(fmt.Sprintf("<h1>%s NOT FOUND<h1>", requestURI)))
-		log.Println(requestURI, "NOT FOUND")
-		return
+		return fileNotFound(writer, requestURI)
 	}
 	switch mode := uri.Mode(); {
 	case mode.IsDir():
-		directoryProcess(requestURI, writer)
+		e = directoryProcess(requestURI, writer)
 	case mode.IsRegular():
-		filesProcess(requestURI, writer)
+		e = filesProcess(requestURI, writer)
+	default:
+		e = fileNotFound(writer, requestURI)
 	}
+	return e
 }
 
-func doPost(writer http.ResponseWriter, request *http.Request, requestURI string) {
-	_ = request.ParseMultipartForm(1<<63 - 1)
-	file, handler, err := request.FormFile("upload")
-	if err != nil {
-		_, _ = writer.Write([]byte(err.Error()))
-		log.Println(err)
-		return
+func fileNotFound(writer http.ResponseWriter, requestURI string) error {
+	writer.WriteHeader(404)
+	_, _ = fmt.Fprintf(writer, "<h1>%s NOT FOUND<h1>", requestURI)
+	return errors.New(fmt.Sprintf("%s not found", requestURI))
+}
+
+func doPost(request *http.Request, requestURI string) error {
+	e := request.ParseMultipartForm(1 << 10 << 10 << 10 * 10)
+	if e != nil {
+		return e
 	}
-	defer file.Close()
+	src, handler, e := request.FormFile("upload")
+	if e != nil {
+		return e
+	}
+	defer src.Close()
 	filename := requestURI + sep + handler.Filename
 	info, _ := os.Stat(filename)
 	if info != nil {
-		_, _ = writer.Write([]byte("<h1>The File Is Existed</h1>"))
-		log.Println(filename + ": The File Is Existed")
-		return
+		return fmt.Errorf("%s is exist", filename)
 	}
-	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		log.Println(err)
-		_, _ = writer.Write([]byte(err.Error()))
-		return
+	dst, e := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0666)
+	if e != nil {
+		return e
 	}
-	defer f.Close()
-	_, err = io.Copy(f, file)
-	if err != nil {
-		_, _ = writer.Write([]byte(err.Error()))
-		log.Println(err)
-		return
-	}
-	doGet(writer, requestURI)
+	defer dst.Close()
+	_, e = bufio.NewReader(src).WriteTo(dst)
+	return e
 }
 
-func directoryProcess(requestURI string, writer http.ResponseWriter) {
+func directoryProcess(requestURI string, writer http.ResponseWriter) error {
 	files, err := ioutil.ReadDir(requestURI)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	fs, dirs := splitDirsAndFiles(files)
 	sort.SliceStable(fs, func(i, j int) bool {
@@ -167,28 +169,24 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) {
 	name := htmlReplacer.Replace(requestURI)
 	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, requestURI)
 	if err != nil {
-		log.Println(err)
+		return err
 	}
 	for _, v := range files {
 		_, err := fmt.Fprintf(&buffer, htmlTableRow, requestURI, v.Name(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
 		if err != nil {
-			log.Println(err)
+			return err
 		}
 	}
 	buffer.WriteString(htmlLastPart)
 	writer.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
 	_, err = writer.Write(buffer.Bytes())
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	return err
 }
 
-func filesProcess(requestURI string, writer http.ResponseWriter) {
+func filesProcess(requestURI string, writer http.ResponseWriter) error {
 	file, e := os.Open(requestURI)
 	if e != nil {
-		log.Println(e)
-		return
+		return e
 	}
 	defer file.Close()
 	reader := bufio.NewReader(file)
@@ -198,13 +196,11 @@ func filesProcess(requestURI string, writer http.ResponseWriter) {
 	}
 	fileInfo, e := file.Stat()
 	if e != nil {
-		log.Println(e)
+		return e
 	}
 	writer.Header().Set("Content-Length", strconv.Itoa(int(fileInfo.Size())))
 	_, e = reader.WriteTo(writer)
-	if e != nil {
-		log.Println(e)
-	}
+	return e
 }
 
 // the first part is directories, and the second part is files
@@ -217,4 +213,13 @@ func splitDirsAndFiles(files []os.FileInfo) ([]os.FileInfo, []os.FileInfo) {
 		}
 	}
 	return files[:i], files[i:]
+}
+
+func handleError(err error, writer io.Writer) bool {
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, err.Error())
+		log.Println(err)
+		return true
+	}
+	return false
 }
