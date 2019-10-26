@@ -80,9 +80,9 @@ func main() {
 		log.Fatalln(e)
 	}
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		requestURI, _ := url.PathUnescape(request.URL.RequestURI())
+		requestURI, _ := url.PathUnescape(request.URL.String())
 		log.Println(request.RemoteAddr, request.Method, requestURI)
-		requestURI = fmt.Sprintf(".%s", strings.TrimRight(requestURI, "/"))
+		requestURI = fmt.Sprintf(".%s", strings.TrimSuffix(requestURI, "/"))
 
 		switch request.Method {
 		case http.MethodGet:
@@ -168,14 +168,12 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) error {
 	})
 	buffer := bytes.Buffer{}
 	name := htmlReplacer.Replace(requestURI)
-	parent := url.URL{Path: requestURI}
-	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, parent.String())
+	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, requestURI)
 	if err != nil {
 		return err
 	}
 	for _, v := range files {
-		fileUrl := url.URL{Path: v.Name()}
-		_, err := fmt.Fprintf(&buffer, htmlTableRow, parent.String(), fileUrl.String(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
+		_, err := fmt.Fprintf(&buffer, htmlTableRow, requestURI, (&url.URL{Path: v.Name()}).String(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
 		if err != nil {
 			return err
 		}
