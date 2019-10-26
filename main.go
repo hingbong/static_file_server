@@ -81,7 +81,7 @@ func main() {
 	}
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		requestURI, _ := url.PathUnescape(request.URL.RequestURI())
-		fmt.Println(request.RemoteAddr, request.Method, requestURI)
+		log.Println(request.RemoteAddr, request.Method, requestURI)
 		requestURI = fmt.Sprintf(".%s", strings.TrimRight(requestURI, "/"))
 
 		switch request.Method {
@@ -93,6 +93,7 @@ func main() {
 			if handleError(err, writer) {
 				return
 			}
+			log.Printf("%s uploaded", requestURI)
 			err = directoryProcess(requestURI, writer)
 			handleError(err, writer)
 		default:
