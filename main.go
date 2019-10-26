@@ -167,12 +167,14 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) error {
 	})
 	buffer := bytes.Buffer{}
 	name := htmlReplacer.Replace(requestURI)
-	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, requestURI)
+	parent := url.URL{Path: requestURI}
+	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, parent.String())
 	if err != nil {
 		return err
 	}
 	for _, v := range files {
-		_, err := fmt.Fprintf(&buffer, htmlTableRow, requestURI, v.Name(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
+		fileUrl := url.URL{Path: v.Name()}
+		_, err := fmt.Fprintf(&buffer, htmlTableRow, parent.String(), fileUrl.String(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
 		if err != nil {
 			return err
 		}
