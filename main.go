@@ -80,7 +80,13 @@ func main() {
 		log.Fatalln(e)
 	}
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		requestURI, _ := url.PathUnescape(request.URL.String())
+		uri := request.URL.RequestURI()
+		index := strings.Index(uri, "?")
+		if index >= 0 {
+			uri = uri[:index]
+		}
+		requestURI, err := url.PathUnescape(uri)
+		handleError(err, writer)
 		log.Println(request.RemoteAddr, request.Method, requestURI)
 		requestURI = fmt.Sprintf(".%s", strings.TrimSuffix(requestURI, "/"))
 
@@ -110,8 +116,11 @@ func main() {
 
 func doGet(writer http.ResponseWriter, requestURI string) error {
 	uri, e := os.Stat(requestURI)
-	if os.IsNotExist(e) {
-		return fileNotFound(writer, requestURI)
+	if e != nil {
+		if os.IsNotExist(e) {
+			return fileNotFound(writer, requestURI)
+		}
+		return e
 	}
 	switch mode := uri.Mode(); {
 	case mode.IsDir():
@@ -167,12 +176,13 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) error {
 	})
 	buffer := bytes.Buffer{}
 	name := htmlReplacer.Replace(requestURI)
-	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, requestURI)
+	parent := url.PathEscape(requestURI)
+	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, parent)
 	if err != nil {
 		return err
 	}
 	for _, v := range files {
-		_, err := fmt.Fprintf(&buffer, htmlTableRow, requestURI, (&url.URL{Path: v.Name()}).String(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
+		_, err := fmt.Fprintf(&buffer, htmlTableRow, parent, (&url.URL{Path: v.Name()}).String(), htmlReplacer.Replace(v.Name()), v.ModTime(), strconv.Itoa(int(v.Size())), strconv.FormatBool(v.IsDir()))
 		if err != nil {
 			return err
 		}
