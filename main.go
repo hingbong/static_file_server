@@ -126,7 +126,6 @@ func doGet(writer http.ResponseWriter, requestURI string) error {
 
 func fileNotFound(writer http.ResponseWriter, requestURI string) error {
 	writer.WriteHeader(404)
-	_, _ = fmt.Fprintf(writer, "<h1>%s NOT FOUND<h1>", requestURI)
 	return errors.New(fmt.Sprintf("%s not found", requestURI))
 }
 
