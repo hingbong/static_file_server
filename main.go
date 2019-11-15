@@ -176,7 +176,7 @@ func directoryProcess(requestURI string, writer http.ResponseWriter) error {
 	})
 	buffer := bytes.Buffer{}
 	name := htmlReplacer.Replace(requestURI)
-	parent := url.PathEscape(requestURI)
+	parent := (&url.URL{Path: requestURI}).String()
 	_, err = fmt.Fprintf(&buffer, htmlFirstPart, name, parent)
 	if err != nil {
 		return err
