@@ -25,7 +25,7 @@ jobs:
     - name: Build
       run: go build -o server.exe -v .
     - name: List
-      run: ls -a
+      run: ls
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2
       with:
