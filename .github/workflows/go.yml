@@ -32,6 +32,8 @@ jobs:
 
     - name: Build
       run: GOOS=windows;go build -o server.exe -v .
+    - name: List
+      run: ls -a
     - name: Download a Build Artifact
       uses: actions/download-artifact@v2
       with:
