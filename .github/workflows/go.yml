@@ -34,10 +34,10 @@ jobs:
       run: GOOS=windows;go build -o server.exe -v .
     - name: List
       run: ls -a
-    - name: Download a Build Artifact
-      uses: actions/download-artifact@v2
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v2
       with:
         # Artifact name
         name: server.exe
         # Destination path
-        path: server.exe
+        path: ./server.exe
