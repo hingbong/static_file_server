@@ -26,15 +26,16 @@ jobs:
 
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
-
+    - name: mkdir
+      run: mkdir bin
     - name: Build
-      run: go build -o server.exe -v .
+      run: go build -o bin/server-${{ matrix.os }} -v .
     - name: List
-      run: ls
+      run: ls bin
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v2
       with:
         # Artifact name
-        name: server.exe
+        name: server-*
         # Destination path
-        path: ./server.exe
+        path: ./bin/
