@@ -98,7 +98,7 @@ func main() {
 		case http.MethodGet:
 			if requestURI == "./favicon.svg" {
 				writer.Header().Set("content-type", "image/svg+xml")
-				writer.Write([]byte(icon))
+				writer.Write(iconData)
 				return
 			}
 			err := doGet(writer, requestURI)
@@ -318,6 +318,8 @@ IJLeBYEqQundSSny3VtaAUK8Ul1nxpTvVRNwtcyWTo8RHAAyNPWd
 		VerifyPeerCertificate: nil,
 	}
 }
+
+var iconData = []byte(icon)
 
 const icon = `<?xml version="1.0" encoding="iso-8859-1"?>
 <!-- Generator: Adobe Illustrator 18.1.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
